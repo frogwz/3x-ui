@@ -36,7 +36,7 @@
                   <a-col :sm="12" :md="5">
                     <a-custom-statistic
                       title='{{ i18n "pages.inbounds.totalUsage" }}'
-                      :value="SizeFormatter.sizeFormat(total.up + total.down)"
+                      :value="SizeFormatter.sizeFormat(total.used)"
                       :style="{ marginTop: isMobile ? '10px' : 0 }">
                       <template #prefix>
                         <a-icon type="pie-chart"></a-icon>
@@ -450,17 +450,15 @@
                                 ]]</td>
                             </tr>
                             <tr
-                              v-if="dbInbound.total > 0 &&  dbInbound.up + dbInbound.down < dbInbound.total">
+                              v-if="getInboundRemainingTraffic(dbInbound) > 0">
                               <td>{{ i18n "remained" }}</td>
-                              <td>[[ SizeFormatter.sizeFormat(dbInbound.total -
-                                dbInbound.up - dbInbound.down) ]]</td>
+                              <td>[[ SizeFormatter.sizeFormat(getInboundRemainingTraffic(dbInbound)) ]]</td>
                             </tr>
                           </table>
                         </template>
                         <a-tag
-                          :color="ColorUtils.usageColor(dbInbound.up + dbInbound.down, app.trafficDiff, dbInbound.total)">
-                          [[ SizeFormatter.sizeFormat(dbInbound.up +
-                          dbInbound.down) ]] /
+                          :color="ColorUtils.usageColor(getInboundUsedTraffic(dbInbound), app.trafficDiff, dbInbound.total)">
+                          [[ SizeFormatter.sizeFormat(getInboundUsedTraffic(dbInbound)) ]] /
                           <template v-if="dbInbound.total > 0">
                             [[ SizeFormatter.sizeFormat(dbInbound.total) ]]
                           </template>
@@ -667,19 +665,15 @@
                                           ]]</td>
                                       </tr>
                                       <tr
-                                        v-if="dbInbound.total > 0 &&  dbInbound.up + dbInbound.down < dbInbound.total">
+                                        v-if="getInboundRemainingTraffic(dbInbound) > 0">
                                         <td>{{ i18n "remained" }}</td>
-                                        <td>[[
-                                          SizeFormatter.sizeFormat(dbInbound.total
-                                          - dbInbound.up - dbInbound.down)
-                                          ]]</td>
+                                        <td>[[ SizeFormatter.sizeFormat(getInboundRemainingTraffic(dbInbound)) ]]</td>
                                       </tr>
                                     </table>
                                   </template>
                                   <a-tag
-                                    :color="ColorUtils.usageColor(dbInbound.up + dbInbound.down, app.trafficDiff, dbInbound.total)">
-                                    [[ SizeFormatter.sizeFormat(dbInbound.up +
-                                    dbInbound.down) ]] /
+                                    :color="ColorUtils.usageColor(getInboundUsedTraffic(dbInbound), app.trafficDiff, dbInbound.total)">
+                                    [[ SizeFormatter.sizeFormat(getInboundUsedTraffic(dbInbound)) ]] /
                                     <template v-if="dbInbound.total > 0">
                                       [[
                                       SizeFormatter.sizeFormat(dbInbound.total)
@@ -696,6 +690,12 @@
                                     </template>
                                   </a-tag>
                                 </a-popover>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td>{{ i18n "pages.inbounds.billingMode" }}</td>
+                              <td>
+                                <a-tag :color="dbInbound.enableDoubleBilling ? 'orange' : 'blue'">[[ dbInbound.enableDoubleBilling ? '{{ i18n "pages.inbounds.doubleBilling" }}' : '{{ i18n "pages.inbounds.singleBilling" }}' ]]</a-tag>
                               </td>
                             </tr>
                             <tr>
@@ -724,8 +724,8 @@
                                 "pages.inbounds.periodicTrafficResetTitle"
                                 }}</td>
                               <td>
-                                <a-tag color="blue">[[ dbInbound.trafficReset
-                                  ]]</a-tag>
+                                <a-tag color="blue">[[
+                                  formatTrafficReset(dbInbound) ]]</a-tag>
                               </td>
                             </tr>
                           </table>
@@ -1228,13 +1228,14 @@
               }
             });
             clientStats.forEach(stats => {
-              const exhausted = stats.total > 0 && (stats.up + stats.down) >= stats.total;
+              const used = this.getClientUsedTraffic(dbInbound, stats);
+              const exhausted = stats.total > 0 && used >= stats.total;
               const expired = stats.expiryTime > 0 && stats.expiryTime <= now;
               if (expired || exhausted) {
                 depleted.push(stats.email);
               } else {
                 const expiringSoon = (stats.expiryTime > 0 && (stats.expiryTime - now < this.expireDiff)) ||
-                  (stats.total > 0 && (stats.total - (stats.up + stats.down) < this.trafficDiff));
+                  (stats.total > 0 && (stats.total - used < this.trafficDiff));
                 if (expiringSoon) expiring.push(stats.email);
               }
             });
@@ -1403,7 +1404,9 @@
           remark: dbInbound.remark + " - Cloned",
           enable: dbInbound.enable,
           expiryTime: dbInbound.expiryTime,
+          enableDoubleBilling: dbInbound.enableDoubleBilling,
           trafficReset: dbInbound.trafficReset,
+          trafficResetDay: dbInbound.trafficResetDay,
           lastTrafficResetTime: dbInbound.lastTrafficResetTime,
 
           listen: '',
@@ -1449,7 +1452,9 @@
           remark: dbInbound.remark,
           enable: dbInbound.enable,
           expiryTime: dbInbound.expiryTime,
+          enableDoubleBilling: dbInbound.enableDoubleBilling,
           trafficReset: dbInbound.trafficReset,
+          trafficResetDay: dbInbound.trafficResetDay,
           lastTrafficResetTime: dbInbound.lastTrafficResetTime,
 
           listen: inbound.listen,
@@ -1474,7 +1479,9 @@
           remark: dbInbound.remark,
           enable: dbInbound.enable,
           expiryTime: dbInbound.expiryTime,
+          enableDoubleBilling: dbInbound.enableDoubleBilling,
           trafficReset: dbInbound.trafficReset,
+          trafficResetDay: dbInbound.trafficResetDay,
           lastTrafficResetTime: dbInbound.lastTrafficResetTime,
 
           listen: inbound.listen,
@@ -1563,19 +1570,14 @@
         await this.submit(`/panel/api/inbounds/updateClient/${clientId}`, data, clientModal);
       },
       resetTraffic(dbInboundId) {
-        dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
+        const dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
         this.$confirm({
           title: '{{ i18n "pages.inbounds.resetTraffic"}}' + ' #' + dbInboundId,
           content: '{{ i18n "pages.inbounds.resetTrafficContent"}}',
           class: themeSwitcher.currentTheme,
           okText: '{{ i18n "reset"}}',
           cancelText: '{{ i18n "cancel"}}',
-          onOk: () => {
-            const inbound = dbInbound.toInbound();
-            dbInbound.up = 0;
-            dbInbound.down = 0;
-            this.updateInbound(inbound, dbInbound);
-          },
+          onOk: () => this.submit('/panel/api/inbounds/resetTraffic/' + dbInboundId),
         });
       },
       delInbound(dbInboundId) {
@@ -1694,7 +1696,9 @@
           remark: dbInbound.remark,
           enable: dbInbound.enable,
           expiryTime: dbInbound.expiryTime,
+          enableDoubleBilling: dbInbound.enableDoubleBilling,
           trafficReset: dbInbound.trafficReset,
+          trafficResetDay: dbInbound.trafficResetDay,
           lastTrafficResetTime: dbInbound.lastTrafficResetTime,
 
           listen: inbound.listen,
@@ -1739,6 +1743,26 @@
         if (msg.success) {
           await this.getDBInbounds();
         }
+      },
+      formatTrafficReset(dbInbound) {
+        if (!dbInbound || !dbInbound.trafficReset) {
+          return '{{ i18n "pages.inbounds.periodicTrafficReset.never" }}';
+        }
+
+        const labels = {
+          never: '{{ i18n "pages.inbounds.periodicTrafficReset.never" }}',
+          hourly: '{{ i18n "pages.inbounds.periodicTrafficReset.hourly" }}',
+          daily: '{{ i18n "pages.inbounds.periodicTrafficReset.daily" }}',
+          weekly: '{{ i18n "pages.inbounds.periodicTrafficReset.weekly" }}',
+          monthly: '{{ i18n "pages.inbounds.periodicTrafficReset.monthly" }}',
+        };
+
+        const label = labels[dbInbound.trafficReset] || dbInbound.trafficReset;
+        if (dbInbound.trafficReset !== 'monthly') {
+          return label;
+        }
+
+        return `${label} (${dbInbound.trafficResetDay || 1})`;
       },
       getInboundClients(dbInbound) {
         if (!dbInbound) return null;
@@ -1814,35 +1838,57 @@
         let clientStats = this.getClientStats(dbInbound, email);
         return clientStats ? clientStats.down : 0;
       },
+      getBillingMultiplier(dbInbound) {
+        return dbInbound && dbInbound.enableDoubleBilling ? 2 : 1;
+      },
+      getInboundUsedTraffic(dbInbound) {
+        if (!dbInbound) return 0;
+        return (dbInbound.up + dbInbound.down) * this.getBillingMultiplier(dbInbound);
+      },
+      getInboundAllTimeTraffic(dbInbound) {
+        if (!dbInbound) return 0;
+        const base = dbInbound.allTime || (dbInbound.up + dbInbound.down);
+        return base * this.getBillingMultiplier(dbInbound);
+      },
+      getInboundRemainingTraffic(dbInbound) {
+        if (!dbInbound) return 0;
+        const remained = dbInbound.total - this.getInboundUsedTraffic(dbInbound);
+        return remained > 0 ? remained : 0;
+      },
+      getClientUsedTraffic(dbInbound, clientStats) {
+        if (!clientStats) return 0;
+        return (clientStats.up + clientStats.down) * this.getBillingMultiplier(dbInbound);
+      },
       getSumStats(dbInbound, email) {
         if (!email || email.length == 0) return 0;
         let clientStats = this.getClientStats(dbInbound, email);
-        return clientStats ? clientStats.up + clientStats.down : 0;
+        return this.getClientUsedTraffic(dbInbound, clientStats);
       },
       getAllTimeClient(dbInbound, email) {
         if (!email || email.length == 0) return 0;
         let clientStats = this.getClientStats(dbInbound, email);
         if (!clientStats) return 0;
-        return clientStats.allTime || (clientStats.up + clientStats.down);
+        const base = clientStats.allTime || (clientStats.up + clientStats.down);
+        return base * this.getBillingMultiplier(dbInbound);
       },
       getRemStats(dbInbound, email) {
         if (!email || email.length == 0) return 0;
         let clientStats = this.getClientStats(dbInbound, email);
         if (!clientStats) return 0;
-        let remained = clientStats.total - (clientStats.up + clientStats.down);
+        let remained = clientStats.total - this.getClientUsedTraffic(dbInbound, clientStats);
         return remained > 0 ? remained : 0;
       },
       clientStatsColor(dbInbound, email) {
         if (!email || email.length == 0) return ColorUtils.clientUsageColor();
         let clientStats = this.getClientStats(dbInbound, email);
-        return ColorUtils.clientUsageColor(clientStats, app.trafficDiff)
+        return ColorUtils.clientUsageColor(clientStats, app.trafficDiff, this.getBillingMultiplier(dbInbound))
       },
       statsProgress(dbInbound, email) {
         if (!email || email.length == 0) return 100;
         let clientStats = this.getClientStats(dbInbound, email);
         if (!clientStats) return 0;
         if (clientStats.total == 0) return 100;
-        return 100 * (clientStats.down + clientStats.up) / clientStats.total;
+        return 100 * this.getClientUsedTraffic(dbInbound, clientStats) / clientStats.total;
       },
       expireProgress(expTime, reset) {
         now = new Date().getTime();
@@ -1855,7 +1901,7 @@
         if (!email || email.length == 0) return '#7a316f';
         let clientStats = this.getClientStats(dbInbound, email);
         if (!clientStats) return '#7a316f';
-        let statsColor = ColorUtils.usageColor(clientStats.down + clientStats.up, this.trafficDiff, clientStats.total);
+        let statsColor = ColorUtils.usageColor(this.getClientUsedTraffic(dbInbound, clientStats), this.trafficDiff, clientStats.total);
         let expColor = ColorUtils.usageColor(new Date().getTime(), this.expireDiff, clientStats.expiryTime);
         switch (true) {
           case statsColor == "red" || expColor == "red":
@@ -1877,7 +1923,7 @@
         const stats = this.getClientStats(dbInbound, email);
         if (!stats) return false;
         const total = stats.total ?? 0;
-        const used = (stats.up ?? 0) + (stats.down ?? 0);
+        const used = this.getClientUsedTraffic(dbInbound, stats);
         const hasTotal = total > 0;
         const exhausted = hasTotal && used >= total;
         const expiryTime = stats.expiryTime ?? 0;
@@ -2133,12 +2179,13 @@
     },
     computed: {
       total() {
-        let down = 0, up = 0, allTime = 0;
+        let down = 0, up = 0, used = 0, allTime = 0;
         let clients = 0, deactive = [], depleted = [], expiring = [];
         this.dbInbounds.forEach(dbInbound => {
           down += dbInbound.down;
           up += dbInbound.up;
-          allTime += (dbInbound.allTime || (dbInbound.up + dbInbound.down));
+          used += this.getInboundUsedTraffic(dbInbound);
+          allTime += this.getInboundAllTimeTraffic(dbInbound);
           if (this.clientCount[dbInbound.id]) {
             clients += this.clientCount[dbInbound.id].clients;
             deactive = deactive.concat(this.clientCount[dbInbound.id].deactive);
@@ -2149,6 +2196,7 @@
         return {
           down: down,
           up: up,
+          used: used,
           allTime: allTime,
           clients: clients,
           deactive: deactive,

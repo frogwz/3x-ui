@@ -49,6 +49,19 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
+                    <span>{{ i18n "pages.inbounds.enableDoubleBillingDesc" }}</span>
+                </template>
+                {{ i18n "pages.inbounds.enableDoubleBillingTitle" }}
+                <a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-switch v-model="dbInbound.enableDoubleBilling"></a-switch>
+    </a-form-item>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">
                     <span>{{ i18n "pages.inbounds.periodicTrafficResetDesc"
                         }}</span>
                     <br v-if="dbInbound.lastTrafficResetTime && dbInbound.lastTrafficResetTime > 0">
@@ -78,6 +91,19 @@
                 "pages.inbounds.periodicTrafficReset.monthly"
                 }}</a-select-option>
         </a-select>
+    </a-form-item>
+    <a-form-item v-if="dbInbound.trafficReset === 'monthly'">
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">
+                    <span>{{ i18n "pages.inbounds.periodicTrafficResetDayDesc"
+                        }}</span>
+                </template>
+                {{ i18n "pages.inbounds.periodicTrafficResetDayTitle" }}
+                <a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-input-number v-model.number="dbInbound.trafficResetDay" :min="1" :max="31"></a-input-number>
     </a-form-item>
 
     <a-form-item>

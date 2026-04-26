@@ -334,8 +334,8 @@ func (s *Server) startTask() {
 	s.cron.AddJob("@daily", job.NewPeriodicTrafficResetJob("daily"))
 	// Run once a week, midnight between Sat/Sun
 	s.cron.AddJob("@weekly", job.NewPeriodicTrafficResetJob("weekly"))
-	// Run once a month, midnight, first of month
-	s.cron.AddJob("@monthly", job.NewPeriodicTrafficResetJob("monthly"))
+	// Check once a day and reset monthly plans when today matches the configured reset day
+	s.cron.AddJob("@daily", job.NewPeriodicTrafficResetJob("monthly"))
 
 	// LDAP sync scheduling
 	if ldapEnabled, _ := s.settingService.GetLdapEnable(); ldapEnabled {

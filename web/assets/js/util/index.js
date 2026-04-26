@@ -673,11 +673,12 @@ class ColorUtils {
         }
     }
 
-    static clientUsageColor(clientStats, trafficDiff) {
+    static clientUsageColor(clientStats, trafficDiff, multiplier = 1) {
+        const used = clientStats ? (clientStats.up + clientStats.down) * multiplier : 0;
         switch (true) {
             case !clientStats || clientStats.total == 0: return "#7a316f";
-            case clientStats.up + clientStats.down < clientStats.total - trafficDiff: return "#008771";
-            case clientStats.up + clientStats.down < clientStats.total: return "#f37b24";
+            case used < clientStats.total - trafficDiff: return "#008771";
+            case used < clientStats.total: return "#f37b24";
             default: return "#cf3c3c";
         }
     }

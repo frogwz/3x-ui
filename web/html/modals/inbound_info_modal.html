@@ -191,8 +191,7 @@
           <td>{{ i18n "usage" }}</td>
           <td>
             <a-tag color="green">[[
-              SizeFormatter.sizeFormat(infoModal.clientStats.up +
-              infoModal.clientStats.down) ]]</a-tag>
+              SizeFormatter.sizeFormat(getUsedStats()) ]]</a-tag>
             <a-tag>↑ [[ SizeFormatter.sizeFormat(infoModal.clientStats.up)
               ]] / [[ SizeFormatter.sizeFormat(infoModal.clientStats.down)
               ]] ↓</a-tag>
@@ -736,10 +735,19 @@
           })
       },
       statsColor(stats) {
-        return ColorUtils.usageColor(stats.up + stats.down, app.trafficDiff, stats.total);
+        const multiplier = this.dbInbound.enableDoubleBilling ? 2 : 1;
+        return ColorUtils.usageColor((stats.up + stats.down) * multiplier, app.trafficDiff, stats.total);
+      },
+      getUsedStats() {
+        const stats = this.infoModal.clientStats;
+        if (!stats) {
+          return 0;
+        }
+        const multiplier = this.dbInbound.enableDoubleBilling ? 2 : 1;
+        return (stats.up + stats.down) * multiplier;
       },
       getRemStats() {
-        remained = this.infoModal.clientStats.total - this.infoModal.clientStats.up - this.infoModal.clientStats.down;
+        remained = this.infoModal.clientStats.total - this.getUsedStats();
         return remained > 0 ? SizeFormatter.sizeFormat(remained) : '-';
       },
       refreshIPs() {

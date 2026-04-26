@@ -194,10 +194,10 @@
     <a-input-number v-model.number="client._totalGB" :min="0"></a-input-number>
   </a-form-item>
   <a-form-item v-if="isEdit && clientStats" label='{{ i18n "usage" }}'>
-    <a-tag :color="ColorUtils.clientUsageColor(clientStats, app.trafficDiff)">
+    <a-tag :color="ColorUtils.clientUsageColor(clientStats, app.trafficDiff, clientModal.dbInbound.enableDoubleBilling ? 2 : 1)">
       [[ SizeFormatter.sizeFormat(clientStats.up) ]] / [[
       SizeFormatter.sizeFormat(clientStats.down) ]] ([[
-      SizeFormatter.sizeFormat(clientStats.up + clientStats.down) ]])
+      SizeFormatter.sizeFormat((clientStats.up + clientStats.down) * (clientModal.dbInbound.enableDoubleBilling ? 2 : 1)) ]])
     </a-tag>
     <a-tooltip>
       <template slot="title">{{ i18n "pages.inbounds.resetTraffic" }}</template>

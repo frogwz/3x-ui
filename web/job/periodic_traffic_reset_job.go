@@ -1,6 +1,9 @@
 package job
 
 import (
+	"time"
+
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 )
@@ -21,6 +24,39 @@ func NewPeriodicTrafficResetJob(period Period) *PeriodicTrafficResetJob {
 	}
 }
 
+func (j *PeriodicTrafficResetJob) shouldResetInbound(inbound *model.Inbound, now time.Time) bool {
+	if inbound == nil {
+		return false
+	}
+
+	if j.period != "monthly" {
+		return true
+	}
+
+	resetDay := inbound.TrafficResetDay
+	if resetDay < 1 {
+		resetDay = 1
+	}
+	if resetDay > 31 {
+		resetDay = 31
+	}
+
+	lastDayOfMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
+	if resetDay > lastDayOfMonth {
+		resetDay = lastDayOfMonth
+	}
+	if now.Day() != resetDay {
+		return false
+	}
+
+	if inbound.LastTrafficResetTime == 0 {
+		return true
+	}
+
+	lastReset := time.UnixMilli(inbound.LastTrafficResetTime).In(now.Location())
+	return lastReset.Year() != now.Year() || lastReset.Month() != now.Month()
+}
+
 // Run resets traffic statistics for all inbounds that match the configured reset period.
 func (j *PeriodicTrafficResetJob) Run() {
 	inbounds, err := j.inboundService.GetInboundsByTrafficReset(string(j.period))
@@ -35,21 +71,19 @@ func (j *PeriodicTrafficResetJob) Run() {
 	logger.Infof("Running periodic traffic reset job for period: %s (%d matching inbounds)", j.period, len(inbounds))
 
 	resetCount := 0
+	now := time.Now()
 
 	for _, inbound := range inbounds {
-		resetInboundErr := j.inboundService.ResetInboundTraffic(inbound.Id)
-		if resetInboundErr != nil {
-			logger.Warning("Failed to reset traffic for inbound", inbound.Id, ":", resetInboundErr)
+		if !j.shouldResetInbound(inbound, now) {
+			continue
 		}
 
-		resetClientErr := j.inboundService.ResetAllClientTraffics(inbound.Id)
-		if resetClientErr != nil {
-			logger.Warning("Failed to reset traffic for all users of inbound", inbound.Id, ":", resetClientErr)
+		if err := j.inboundService.ResetTraffic(inbound.Id, true); err != nil {
+			logger.Warning("Failed to reset traffic for inbound", inbound.Id, ":", err)
+			continue
 		}
 
-		if resetInboundErr == nil && resetClientErr == nil {
-			resetCount++
-		}
+		resetCount++
 	}
 
 	if resetCount > 0 {

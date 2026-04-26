@@ -11,6 +11,8 @@ class DBInbound {
         this.enable = true;
         this.expiryTime = 0;
         this.trafficReset = "never";
+        this.trafficResetDay = 1;
+        this.enableDoubleBilling = false;
         this.lastTrafficResetTime = 0;
 
         this.listen = "";

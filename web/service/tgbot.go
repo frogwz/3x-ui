@@ -2814,7 +2814,7 @@ func (t *Tgbot) getInboundUsages() string {
 		for _, inbound := range inbounds {
 			info.WriteString(t.I18nBot("tgbot.messages.inbound", "Remark=="+inbound.Remark))
 			info.WriteString(t.I18nBot("tgbot.messages.port", "Port=="+strconv.Itoa(inbound.Port)))
-			info.WriteString(t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic((inbound.Up+inbound.Down)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down)))
+			info.WriteString(t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic(inboundTrafficUsage(inbound)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down)))
 
 			if inbound.ExpiryTime == 0 {
 				info.WriteString(t.I18nBot("tgbot.messages.expire", "Time=="+t.I18nBot("tgbot.unlimited")))
@@ -3082,6 +3082,7 @@ func (t *Tgbot) clientInfoMsg(
 
 	output := ""
 	output += t.I18nBot("tgbot.messages.email", "Email=="+traffic.Email)
+	_, inbound, _ := t.inboundService.GetClientInboundByEmail(traffic.Email)
 	if printEnabled {
 		output += t.I18nBot("tgbot.messages.enabled", "Enable=="+enabled)
 	}
@@ -3104,7 +3105,7 @@ func (t *Tgbot) clientInfoMsg(
 	if printTraffic {
 		output += t.I18nBot("tgbot.messages.upload", "Upload=="+common.FormatTraffic(traffic.Up))
 		output += t.I18nBot("tgbot.messages.download", "Download=="+common.FormatTraffic(traffic.Down))
-		output += t.I18nBot("tgbot.messages.total", "UpDown=="+common.FormatTraffic((traffic.Up+traffic.Down)), "Total=="+total)
+		output += t.I18nBot("tgbot.messages.total", "UpDown=="+common.FormatTraffic(clientTrafficUsage(inbound, traffic)), "Total=="+total)
 	}
 	if printRefreshed {
 		output += t.I18nBot("tgbot.messages.refreshedOn", "Time=="+time.Now().Format("2006-01-02 15:04:05"))
@@ -3401,7 +3402,7 @@ func (t *Tgbot) searchInbound(chatId int64, remark string) {
 		info := ""
 		info += t.I18nBot("tgbot.messages.inbound", "Remark=="+inbound.Remark)
 		info += t.I18nBot("tgbot.messages.port", "Port=="+strconv.Itoa(inbound.Port))
-		info += t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic((inbound.Up+inbound.Down)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down))
+		info += t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic(inboundTrafficUsage(inbound)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down))
 
 		if inbound.ExpiryTime == 0 {
 			info += t.I18nBot("tgbot.messages.expire", "Time=="+t.I18nBot("tgbot.unlimited"))
@@ -3446,14 +3447,14 @@ func (t *Tgbot) getExhausted(chatId int64) {
 	for _, inbound := range inbounds {
 		if inbound.Enable {
 			if (inbound.ExpiryTime > 0 && (inbound.ExpiryTime-now < exDiff)) ||
-				(inbound.Total > 0 && (inbound.Total-(inbound.Up+inbound.Down) < trDiff)) {
+				(inbound.Total > 0 && (inbound.Total-inboundTrafficUsage(inbound) < trDiff)) {
 				exhaustedInbounds = append(exhaustedInbounds, *inbound)
 			}
 			if len(inbound.ClientStats) > 0 {
 				for _, client := range inbound.ClientStats {
 					if client.Enable {
 						if (client.ExpiryTime > 0 && (client.ExpiryTime-now < exDiff)) ||
-							(client.Total > 0 && (client.Total-(client.Up+client.Down) < trDiff)) {
+							(client.Total > 0 && (clientRemainingTraffic(inbound, &client) < trDiff)) {
 							exhaustedClients = append(exhaustedClients, client)
 						}
 					} else {
@@ -3478,7 +3479,7 @@ func (t *Tgbot) getExhausted(chatId int64) {
 		for _, inbound := range exhaustedInbounds {
 			output += t.I18nBot("tgbot.messages.inbound", "Remark=="+inbound.Remark)
 			output += t.I18nBot("tgbot.messages.port", "Port=="+strconv.Itoa(inbound.Port))
-			output += t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic((inbound.Up+inbound.Down)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down))
+			output += t.I18nBot("tgbot.messages.traffic", "Total=="+common.FormatTraffic(inboundTrafficUsage(&inbound)), "Upload=="+common.FormatTraffic(inbound.Up), "Download=="+common.FormatTraffic(inbound.Down))
 			if inbound.ExpiryTime == 0 {
 				output += t.I18nBot("tgbot.messages.expire", "Time=="+t.I18nBot("tgbot.unlimited"))
 			} else {
@@ -3552,9 +3553,10 @@ func (t *Tgbot) notifyExhausted() {
 								if err == nil && len(traffics) > 0 {
 									output := t.I18nBot("tgbot.messages.exhaustedCount", "Type=="+t.I18nBot("tgbot.clients"))
 									for _, traffic := range traffics {
+										_, inbound, _ := t.inboundService.GetClientInboundByEmail(traffic.Email)
 										if traffic.Enable {
 											if (traffic.ExpiryTime > 0 && (traffic.ExpiryTime-now < exDiff)) ||
-												(traffic.Total > 0 && (traffic.Total-(traffic.Up+traffic.Down) < trDiff)) {
+												(traffic.Total > 0 && (clientRemainingTraffic(inbound, traffic) < trDiff)) {
 												exhaustedClients = append(exhaustedClients, *traffic)
 											}
 										} else {
