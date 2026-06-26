@@ -1,0 +1,198 @@
+name: Auto Release (Fork)
+
+# Automatically builds frontend + Go binary for all platforms on push to main,
+# then publishes a GitHub Release so `install.sh` can download prebuilt binaries
+# directly from frogwz/3x-ui releases.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "**.sh"
+      - "frontend/**"
+      - "x-ui.service.debian"
+      - "x-ui.service.arch"
+      - "x-ui.service.rhel"
+  workflow_dispatch:
+
+jobs:
+  # ── Build matrix ──────────────────────────────────────────────────────
+  build:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - amd64
+          - arm64
+          - armv7
+          - armv6
+          - 386
+          - armv5
+          - s390x
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      # ── Frontend build (must happen BEFORE Go build) ─────────────────
+      # internal/web/web.go uses //go:embed all:dist which requires
+      # internal/web/dist/ to exist at compile time.  Vite outputs there
+      # directly (see frontend/vite.config.js outDir).
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend bundle
+        run: |
+          npm ci
+          npm run build
+        working-directory: frontend
+
+      # ── Go cross-compile (static, musl) ──────────────────────────────
+      - name: Build 3X-UI
+        run: |
+          export CGO_ENABLED=1
+          export GOOS=linux
+          export GOARCH=${{ matrix.platform }}
+          case "${{ matrix.platform }}" in
+            amd64) BOOTLIN_ARCH="x86-64" ;;
+            arm64) BOOTLIN_ARCH="aarch64" ;;
+            armv7) BOOTLIN_ARCH="armv7-eabihf"; export GOARCH=arm GOARM=7 ;;
+            armv6) BOOTLIN_ARCH="armv6-eabihf"; export GOARCH=arm GOARM=6 ;;
+            armv5) BOOTLIN_ARCH="armv5-eabi"; export GOARCH=arm GOARM=5 ;;
+            386)   BOOTLIN_ARCH="x86-i686" ;;
+            s390x) BOOTLIN_ARCH="s390x-z13" ;;
+          esac
+          echo "Resolving Bootlin musl toolchain for arch=$BOOTLIN_ARCH (platform=${{ matrix.platform }})"
+          TARBALL_BASE="https://toolchains.bootlin.com/downloads/releases/toolchains/$BOOTLIN_ARCH/tarballs/"
+          TARBALL_URL=$(curl -fsSL "$TARBALL_BASE" | grep -oE "${BOOTLIN_ARCH}--musl--stable-[^\"]+\\.tar\\.xz" | sort -r | head -n1)
+          [ -z "$TARBALL_URL" ] && { echo "Failed to locate Bootlin musl toolchain for arch=$BOOTLIN_ARCH" >&2; exit 1; }
+          echo "Downloading: $TARBALL_URL"
+          cd /tmp
+          curl -fL -sS -o "$(basename "$TARBALL_URL")" "$TARBALL_BASE/$TARBALL_URL"
+          tar -xf "$(basename "$TARBALL_URL")"
+          TOOLCHAIN_DIR=$(find . -maxdepth 1 -type d -name "${BOOTLIN_ARCH}--musl--stable-*" | head -n1)
+          export PATH="$(realpath "$TOOLCHAIN_DIR")/bin:$PATH"
+          export CC=$(realpath "$(find "$TOOLCHAIN_DIR/bin" -name '*-gcc.br_real' -type f -executable | head -n1)")
+          [ -z "$CC" ] && { echo "No gcc.br_real found in $TOOLCHAIN_DIR/bin" >&2; exit 1; }
+          cd -
+          go build -ldflags "-w -s -linkmode external -extldflags '-static'" -o xui-release -v main.go
+          file xui-release
+          ldd xui-release || echo "Static binary confirmed"
+
+          # ── Assemble release tarball ────────────────────────────────
+          mkdir x-ui
+          cp xui-release x-ui/
+          cp x-ui.sh x-ui/
+          cp x-ui.service.debian x-ui/  2>/dev/null || true
+          cp x-ui.service.arch x-ui/    2>/dev/null || true
+          cp x-ui.service.rhel x-ui/    2>/dev/null || true
+          mv x-ui/xui-release x-ui/x-ui
+          mkdir x-ui/bin
+          cd x-ui/bin
+
+          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.6.22/"
+          case "${{ matrix.platform }}" in
+            amd64) wget -q ${Xray_URL}Xray-linux-64.zip        && unzip -q Xray-linux-64.zip        && rm -f Xray-linux-64.zip ;;
+            arm64) wget -q ${Xray_URL}Xray-linux-arm64-v8a.zip  && unzip -q Xray-linux-arm64-v8a.zip  && rm -f Xray-linux-arm64-v8a.zip ;;
+            armv7) wget -q ${Xray_URL}Xray-linux-arm32-v7a.zip  && unzip -q Xray-linux-arm32-v7a.zip  && rm -f Xray-linux-arm32-v7a.zip ;;
+            armv6) wget -q ${Xray_URL}Xray-linux-arm32-v6.zip   && unzip -q Xray-linux-arm32-v6.zip   && rm -f Xray-linux-arm32-v6.zip ;;
+            386)   wget -q ${Xray_URL}Xray-linux-32.zip         && unzip -q Xray-linux-32.zip         && rm -f Xray-linux-32.zip ;;
+            armv5) wget -q ${Xray_URL}Xray-linux-arm32-v5.zip   && unzip -q Xray-linux-arm32-v5.zip   && rm -f Xray-linux-arm32-v5.zip ;;
+            s390x) wget -q ${Xray_URL}Xray-linux-s390x.zip      && unzip -q Xray-linux-s390x.zip      && rm -f Xray-linux-s390x.zip ;;
+          esac
+
+          rm -f geoip.dat geosite.dat
+          wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+          wget -q https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          wget -q -O geoip_IR.dat https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat
+          wget -q -O geosite_IR.dat https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat
+          wget -q -O geoip_RU.dat https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geoip.dat
+          wget -q -O geosite_RU.dat https://github.com/runetfreedom/russia-v2ray-rules-dat/releases/latest/download/geosite.dat
+          mv xray xray-linux-${{ matrix.platform }}
+
+          # mtg (MTProto sidecar)
+          MTG_VER="2.2.8"
+          case "${{ matrix.platform }}" in
+            amd64|arm64|armv7|armv6|386)
+              wget -q "https://github.com/9seconds/mtg/releases/download/v${MTG_VER}/mtg-${MTG_VER}-linux-${{ matrix.platform }}.tar.gz"
+              tar -xzf "mtg-${MTG_VER}-linux-${{ matrix.platform }}.tar.gz"
+              mv "mtg-${MTG_VER}-linux-${{ matrix.platform }}/mtg" "mtg-linux-${{ matrix.platform }}" 2>/dev/null || mv mtg "mtg-linux-${{ matrix.platform }}"
+              rm -rf "mtg-${MTG_VER}-linux-${{ matrix.platform }}" "mtg-${MTG_VER}-linux-${{ matrix.platform }}.tar.gz"
+              ;;
+          esac
+          cd ../..
+
+      - name: Package
+        run: tar -zcvf x-ui-linux-${{ matrix.platform }}.tar.gz x-ui
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: x-ui-linux-${{ matrix.platform }}
+          path: ./x-ui-linux-${{ matrix.platform }}.tar.gz
+          retention-days: 7
+
+  # ── Publish Release ──────────────────────────────────────────────────
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+          merge-multiple: false
+
+      - name: Collect assets
+        run: |
+          mkdir -p dist
+          # download-artifact creates one directory per artifact name;
+          # flatten into a single directory of .tar.gz files.
+          find release-assets -name '*.tar.gz' -exec cp {} dist/ \;
+          ls -lh dist/
+
+      - name: Generate version tag
+        id: tag
+        run: |
+          TAG="v3.4.0-fork-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Release tag: $TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "${{ steps.tag.outputs.tag }} — 3x-ui fork build"
+          body: |
+            Automated build from `frogwz/3x-ui` main branch.
+
+            **Commit:** [${{ github.sha }}](https://github.com/frogwz/3x-ui/commit/${{ github.sha }})
+            **Features included:**
+            - Bidirectional traffic billing (EnableDoubleBilling)
+            - Custom monthly traffic reset day (TrafficResetDay, 1–31)
+            - All upstream v3.4.0 features
+
+            ### Install
+            ```bash
+            bash <(curl -Ls https://raw.githubusercontent.com/frogwz/3x-ui/main/install.sh)
+            ```
+          files: dist/*.tar.gz
+          generate_release_notes: false
+          make_latest: true
