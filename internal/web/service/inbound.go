@@ -290,13 +290,14 @@ func (s *InboundService) annotateFallbackParents(db *gorm.DB, inbounds []*model.
 }
 
 type InboundOption struct {
-	Id             int    `json:"id" example:"1"`
-	Remark         string `json:"remark" example:"VLESS-443"`
-	Tag            string `json:"tag" example:"in-443-tcp"`
-	Protocol       string `json:"protocol" example:"vless"`
-	Port           int    `json:"port" example:"443"`
-	TlsFlowCapable bool   `json:"tlsFlowCapable" example:"true"`
-	SsMethod       string `json:"ssMethod"`
+	Id                   int    `json:"id" example:"1"`
+	Remark               string `json:"remark" example:"VLESS-443"`
+	Tag                  string `json:"tag" example:"in-443-tcp"`
+	Protocol             string `json:"protocol" example:"vless"`
+	Port                 int    `json:"port" example:"443"`
+	TlsFlowCapable       bool   `json:"tlsFlowCapable" example:"true"`
+	SsMethod             string `json:"ssMethod"`
+	EnableDoubleBilling  bool   `json:"enableDoubleBilling"`
 	// Hosting node; nil for this panel's own inbounds. Lets the clients
 	// page map a node filter onto inbound IDs (#4997).
 	NodeId *int `json:"nodeId,omitempty"`
@@ -305,17 +306,18 @@ type InboundOption struct {
 func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) {
 	db := database.GetDB()
 	var rows []struct {
-		Id             int    `gorm:"column:id"`
-		Remark         string `gorm:"column:remark"`
-		Tag            string `gorm:"column:tag"`
-		Protocol       string `gorm:"column:protocol"`
-		Port           int    `gorm:"column:port"`
-		StreamSettings string `gorm:"column:stream_settings"`
-		Settings       string `gorm:"column:settings"`
-		NodeId         *int   `gorm:"column:node_id"`
+		Id                   int    `gorm:"column:id"`
+		Remark               string `gorm:"column:remark"`
+		Tag                  string `gorm:"column:tag"`
+		Protocol             string `gorm:"column:protocol"`
+		Port                 int    `gorm:"column:port"`
+		StreamSettings       string `gorm:"column:stream_settings"`
+		Settings             string `gorm:"column:settings"`
+		NodeId               *int   `gorm:"column:node_id"`
+		EnableDoubleBilling  bool   `gorm:"column:enable_double_billing"`
 	}
 	err := db.Table("inbounds").
-		Select("id, remark, tag, protocol, port, stream_settings, settings, node_id").
+		Select("id, remark, tag, protocol, port, stream_settings, settings, node_id, enable_double_billing").
 		Where("user_id = ?", userId).
 		Order("id ASC").
 		Scan(&rows).Error
@@ -325,14 +327,15 @@ func (s *InboundService) GetInboundOptions(userId int) ([]InboundOption, error) 
 	out := make([]InboundOption, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, InboundOption{
-			Id:             r.Id,
-			Remark:         r.Remark,
-			Tag:            r.Tag,
-			Protocol:       r.Protocol,
-			Port:           r.Port,
-			TlsFlowCapable: inboundCanEnableTlsFlow(r.Protocol, r.StreamSettings, r.Settings),
-			SsMethod:       inboundShadowsocksMethod(r.Protocol, r.Settings),
-			NodeId:         r.NodeId,
+			Id:                   r.Id,
+			Remark:               r.Remark,
+			Tag:                  r.Tag,
+			Protocol:             r.Protocol,
+			Port:                 r.Port,
+			TlsFlowCapable:       inboundCanEnableTlsFlow(r.Protocol, r.StreamSettings, r.Settings),
+			SsMethod:             inboundShadowsocksMethod(r.Protocol, r.Settings),
+			NodeId:               r.NodeId,
+			EnableDoubleBilling:  r.EnableDoubleBilling,
 		})
 	}
 	return out, nil

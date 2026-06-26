@@ -105,9 +105,18 @@ export default function ClientInfoModal({
     return () => { cancelled = true; };
   }, [open, client?.subId]);
 
+  const getMultiplier = (): number => {
+    if (!client?.inboundIds) return 1;
+    for (const id of client.inboundIds) {
+      if (inboundsById[id]?.enableDoubleBilling) return 2;
+    }
+    return 1;
+  };
+
   const traffic = client?.traffic || null;
   const totalBytes = client?.totalGB || 0;
-  const used = (traffic?.up || 0) + (traffic?.down || 0);
+  const m = getMultiplier();
+  const used = ((traffic?.up || 0) + (traffic?.down || 0)) * m;
   const remaining = useMemo(() => {
     if (totalBytes <= 0) return -1;
     const r = totalBytes - used;

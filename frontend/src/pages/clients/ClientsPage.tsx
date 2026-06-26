@@ -331,6 +331,15 @@ export default function ClientsPage() {
     return out;
   }, [inbounds]);
 
+  /** Returns 2 when any of the client's inbounds has bidirectional billing, 1 otherwise. */
+  function getClientMultiplier(row: ClientRecord | null | undefined | Pick<ClientRecord, 'inboundIds'>): number {
+    if (!row?.inboundIds) return 1;
+    for (const id of row.inboundIds) {
+      if (inboundsById[id]?.enableDoubleBilling) return 2;
+    }
+    return 1;
+  }
+
   const protocolOptions = useMemo(() => {
     const values = new Set<string>((inbounds || []).map((i) => i.protocol).filter((x): x is string => !!x));
     return [...values].sort();
@@ -352,8 +361,9 @@ export default function ClientsPage() {
   const clientBucket = useCallback((row: ClientRecord | null | undefined): Bucket | null => {
     if (!row) return null;
     const traffic = row.traffic || {};
-    const used = (traffic.up || 0) + (traffic.down || 0);
-    const total = row.totalGB || 0;
+    const m = getClientMultiplier(row);
+    const used = ((traffic.up || 0) + (traffic.down || 0)) * m;
+    const total = (row.totalGB || 0);
     const now = Date.now();
     const expired = (row.expiryTime ?? 0) > 0 && (row.expiryTime ?? 0) <= now;
     const exhausted = total > 0 && used >= total;
@@ -390,7 +400,8 @@ export default function ClientsPage() {
   function remainingLabel(row: ClientRecord) {
     const total = row.totalGB || 0;
     if (total <= 0) return '∞';
-    const used = (row.traffic?.up || 0) + (row.traffic?.down || 0);
+    const m = getClientMultiplier(row);
+    const used = ((row.traffic?.up || 0) + (row.traffic?.down || 0)) * m;
     const r = total - used;
     return r > 0 ? SizeFormatter.sizeFormat(r) : '0';
   }
@@ -398,7 +409,8 @@ export default function ClientsPage() {
   function remainingColor(row: ClientRecord): string {
     const total = row.totalGB || 0;
     if (total <= 0) return 'purple';
-    const used = (row.traffic?.up || 0) + (row.traffic?.down || 0);
+    const m = getClientMultiplier(row);
+    const used = ((row.traffic?.up || 0) + (row.traffic?.down || 0)) * m;
     const ratio = used / total;
     if (ratio >= 1) return 'red';
     if (ratio >= 0.85) return 'orange';
@@ -898,6 +910,7 @@ export default function ClientsPage() {
           total={record.totalGB}
           enabled={record.enable}
           trafficDiff={trafficDiff}
+          multiplier={getClientMultiplier(record)}
         />
       ),
     },
@@ -1414,6 +1427,7 @@ export default function ClientsPage() {
                                     down={row.traffic?.down}
                                     total={row.totalGB}
                                     enabled={row.enable}
+                                    multiplier={getClientMultiplier(row)}
                                     trafficDiff={trafficDiff}
                                   />
                                 </div>
