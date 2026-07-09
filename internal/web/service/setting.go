@@ -613,13 +613,22 @@ func (s *SettingService) GetRemarkTemplate() (string, error) {
 
 func (s *SettingService) GetSecret() ([]byte, error) {
 	secret, err := s.getString("secret")
-	if secret == defaultValueMap["secret"] {
-		err := s.saveSetting("secret", secret)
-		if err != nil {
-			logger.Warning("save secret failed:", err)
-		}
+	if err != nil {
+		return nil, err
 	}
-	return []byte(secret), err
+	// Regenerate when the secret is still the package-init default (never
+	// persisted) OR when it was stored as an empty string — e.g. after a
+	// botched migration. An empty secret produces a zero-length gorilla
+	// hash key, which breaks the cookie store at runtime with
+	// "securecookie: hash key is not set".
+	if secret == "" || secret == defaultValueMap["secret"] {
+		newSecret := random.Seq(32)
+		if saveErr := s.setString("secret", newSecret); saveErr != nil {
+			logger.Warning("save secret failed:", saveErr)
+		}
+		secret = newSecret
+	}
+	return []byte(secret), nil
 }
 
 // GetPanelGuid returns this panel's stable self-identifier, persisting a
