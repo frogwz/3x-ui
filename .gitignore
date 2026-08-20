@@ -45,3 +45,6 @@ docker-compose.override.yml
 # Ignore .env (Environment Variables) file
 .env
 
+
+# 本地调试记录
+bugs.txt
